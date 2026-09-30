@@ -16,17 +16,22 @@ export function mountApp(root: HTMLElement, engine: MetronomeEngine) {
   root.innerHTML = `
     <main class="screen">
       <header class="bars" id="bars"></header>
-      <div class="brand">${icons.wave}<span id="title">Metronome</span></div>
-      <div class="pad-row">
-        <button class="pad" id="btn-sig" aria-label="Time signature"></button>
-        <button class="pad" id="btn-sub" aria-label="Subdivision">${icons.notes}</button>
-        <button class="pad" id="btn-more" aria-label="More settings">${icons.more}</button>
+      <div class="spacer"></div>
+      <div class="controls">
+        <div class="brand">${icons.wave}<span id="title">Metronome</span></div>
+        <div class="pad-row">
+          <button class="pad" id="btn-sig" aria-label="Time signature"></button>
+          <button class="pad" id="btn-sub" aria-label="Subdivision">${icons.notes}</button>
+          <button class="pad" id="btn-more" aria-label="More settings">${icons.more}</button>
+        </div>
       </div>
+      <div class="spacer"></div>
       <section class="tempo">
         <div class="tempo-name" id="tname"></div>
         <button class="tempo-num" id="bpm" aria-label="Edit tempo"></button>
         <div class="tempo-unit">BPM</div>
       </section>
+      <div class="spacer"></div>
       <div class="dial-wrap">
         <div class="dial" id="dial" role="slider" aria-label="Tempo" aria-valuemin="${MIN_BPM}" aria-valuemax="${MAX_BPM}">
           <div class="dial-rot">
