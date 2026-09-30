@@ -11,7 +11,8 @@
   /* spacing scale */
   --s1: 8px; --s2: 16px; --s3: 24px; --s4: 32px;
   --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* iOS standalone can report a viewport shorter than the screen (--missing). The home indicator then sits outside it. */
+  --safe-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--missing, 0px)));
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); overscroll-behavior: none; }
@@ -20,7 +21,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 svg { display: block; }
 
 /* layout: one full-height column. Fixed to the screen so it fills under the status bar and home indicator. */
-#app { position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); }
+#app { position: fixed; inset: 0; }
 .screen {
   height: 100%; max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; align-items: center;
   padding: calc(var(--safe-top) + var(--s3)) var(--s3) calc(var(--safe-bottom) + var(--s2));
