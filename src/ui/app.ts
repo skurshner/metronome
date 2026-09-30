@@ -187,5 +187,40 @@ export function mountApp(root: HTMLElement, engine: MetronomeEngine) {
     requestAnimationFrame(frame);
   })();
 
+  // Hidden diagnostics: triple-tap the wordmark to see the real viewport numbers on this device.
+  let brandTaps: number[] = [];
+  root.querySelector('.brand')!.addEventListener('click', () => {
+    const now = performance.now();
+    brandTaps = [...brandTaps.filter((t) => now - t < 600), now];
+    if (brandTaps.length >= 3) { brandTaps = []; toggleDiagnostics(root); }
+  });
+
   refresh();
+}
+
+function toggleDiagnostics(root: HTMLElement) {
+  const existing = document.getElementById('diag');
+  if (existing) return existing.remove();
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const r = (s: string) => Math.round(document.querySelector(s)!.getBoundingClientRect().bottom);
+  const el = document.createElement('pre');
+  el.id = 'diag';
+  el.onclick = () => { el.remove(); probe.remove(); };
+  el.textContent = [
+    `inner ${innerWidth}x${innerHeight}`,
+    `client ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}`,
+    `visualViewport ${Math.round(visualViewport?.width ?? 0)}x${Math.round(visualViewport?.height ?? 0)}`,
+    `screen ${screen.width}x${screen.height}`,
+    `safe t${cs.paddingTop} r${cs.paddingRight} b${cs.paddingBottom} l${cs.paddingLeft}`,
+    `standalone ${(navigator as unknown as { standalone?: boolean }).standalone} ${matchMedia('(display-mode: standalone)').matches}`,
+    `#app bottom ${r('#app')}  .screen bottom ${r('.screen')}`,
+    `dial-wrap bottom ${r('.dial-wrap')}  play bottom ${r('#play')}`,
+    `spacer h ${Math.round(document.querySelector('.spacer')!.getBoundingClientRect().height)}`,
+    '(tap to close)',
+  ].join('\n');
+  el.style.cssText = 'position:fixed;left:8px;right:8px;top:calc(env(safe-area-inset-top,0px) + 4px);z-index:99;margin:0;padding:10px;background:rgba(0,0,0,.85);color:#9f9;font:11px/1.4 ui-monospace,monospace;border-radius:10px;white-space:pre-wrap';
+  root.appendChild(el);
 }
