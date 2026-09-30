@@ -33,10 +33,18 @@ export class MetronomeEngine {
   private loopOffset = 0; // seconds into the buffer at loopStart
   private swapTimer?: number;
   playing = false;
+  private starting = false;
   /** Shift the visual beat position to line up with what you hear (seconds, positive = delay visuals). */
   visualLatency = 0;
   onStateChange?: (playing: boolean) => void;
+  onError?: (message: string) => void;
   private meta: MediaMeta = { title: 'Metronome' };
+
+  constructor() {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this.playing && this.ac && this.ac.state !== 'running') void this.ac.resume().catch(() => {});
+    });
+  }
 
   get config(): MetronomeConfig {
     return this.cfg;
@@ -57,30 +65,47 @@ export class MetronomeEngine {
     this.updateMediaSession();
   }
 
+  /**
+   * Builds a fresh audio graph on every start. Reusing a context/element across stop/start is fragile on iOS
+   * (it may be suspended or "interrupted" while stopped), and everything that needs the user gesture
+   * (AudioContext creation, audio.play()) must happen synchronously before the first await.
+   */
   async start() {
-    if (this.playing) return;
-    this.ensureGraph();
-    const ac = this.ac!;
-    if (ac.state !== 'running') await ac.resume();
-    this.launch(0);
-    await this.audio!.play();
-    this.playing = true;
-    this.updateMediaSession();
-    this.onStateChange?.(true);
+    if (this.playing || this.starting) return;
+    this.starting = true;
+    try {
+      this.buildGraph();
+      this.launch(0);
+      const played = this.audio!.play(); // synchronous call, still inside the tap
+      void this.ac!.resume().catch(() => {});
+      await played;
+      this.playing = true;
+      this.updateMediaSession();
+      this.onStateChange?.(true);
+    } catch (e) {
+      this.teardown();
+      this.onError?.(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+      throw e;
+    } finally {
+      this.starting = false;
+    }
   }
 
   stop() {
-    if (!this.playing) return;
+    const was = this.playing;
     this.playing = false;
-    this.retire(this.voice, 0);
-    this.voice = undefined;
-    this.audio?.pause();
+    this.teardown();
     this.updateMediaSession();
-    this.onStateChange?.(false);
+    if (was) this.onStateChange?.(false);
   }
 
   toggle() {
-    return this.playing ? (this.stop(), Promise.resolve()) : this.start();
+    return this.playing ? (this.stop(), Promise.resolve()) : this.start().catch(() => {});
+  }
+
+  /** For on-screen diagnostics. */
+  debugState() {
+    return `ctx=${this.ac?.state ?? 'none'} audio=${this.audio ? (this.audio.paused ? 'paused' : 'playing') : 'none'}`;
   }
 
   getPosition(): Position {
@@ -100,27 +125,38 @@ export class MetronomeEngine {
 
   // ---- internals ----
 
-  private ensureGraph() {
-    if (this.ac) return;
+  private buildGraph() {
+    this.teardown();
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    this.ac = new Ctx({ latencyHint: 'playback' });
-    this.dest = this.ac.createMediaStreamDestination();
-    this.audio = new Audio();
-    this.audio.srcObject = this.dest.stream;
-    // The lock screen / another app can pause the <audio> element behind our back; keep state honest.
-    this.audio.addEventListener('pause', () => {
-      if (this.playing) this.stop();
-    });
-    this.audio.addEventListener('play', () => {
-      if (!this.playing) void this.start();
+    const ac = new Ctx({ latencyHint: 'playback' });
+    const dest = ac.createMediaStreamDestination();
+    const audio = new Audio();
+    audio.srcObject = dest.stream;
+    this.ac = ac;
+    this.dest = dest;
+    this.audio = audio;
+    // The lock screen or another app can pause the element behind our back; keep state honest.
+    audio.addEventListener('pause', () => {
+      if (this.audio === audio && this.playing) this.stop();
     });
     // iOS suspends the context for calls/alarms ('interrupted'); resume when we can.
-    this.ac.addEventListener('statechange', () => {
-      if (this.playing && this.ac && this.ac.state !== 'running') void this.ac.resume().catch(() => {});
+    ac.addEventListener('statechange', () => {
+      if (this.ac === ac && this.playing && ac.state !== 'running') void ac.resume().catch(() => {});
     });
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && this.playing && this.ac?.state !== 'running') void this.ac?.resume().catch(() => {});
-    });
+  }
+
+  private teardown() {
+    clearTimeout(this.swapTimer);
+    const { ac, audio, voice } = this;
+    this.voice = undefined;
+    this.loop = undefined;
+    this.ac = this.dest = this.audio = undefined;
+    try { voice?.src.stop(); } catch { /* already stopped */ }
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+    }
+    void ac?.close().catch(() => {});
   }
 
   /** Start a new voice at `offset` seconds into the freshly rendered loop. */

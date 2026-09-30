@@ -26,6 +26,7 @@ app.innerHTML = `
   <label>Subdivision sound <select id="k-sub">${kitOpts}</select></label>
   <label>Subdivision volume <input id="v-sub" type="range" min="0" max="1" step="0.05"></label>
   <button id="play" class="big">Start</button>
+  <pre id="debug"></pre>
 `;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -75,12 +76,15 @@ $('tap').onclick = () => {
 };
 
 $('play').onclick = () => void engine.toggle();
-engine.onStateChange = (p) => { $('play').textContent = p ? 'Stop' : 'Start'; };
+let lastError = '';
+engine.onStateChange = (p) => { $('play').textContent = p ? 'Stop' : 'Start'; if (p) lastError = ''; };
+engine.onError = (m) => { lastError = m; };
 
 // beat indicator
 (function frame() {
   const p = engine.getPosition();
   document.querySelectorAll('#dots i').forEach((el, i) => el.classList.toggle('on', p.playing && i === p.beat));
+  $('debug').textContent = `${engine.debugState()}${lastError ? '\nerror: ' + lastError : ''}`;
   requestAnimationFrame(frame);
 })();
 

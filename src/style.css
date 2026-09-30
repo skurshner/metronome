@@ -11,3 +11,4 @@ button { background: #555; } .big { margin-top: 20px; padding: 16px; font-size: 
 #dots { display: flex; gap: 6px; margin-bottom: 8px; }
 #dots i { flex: 1; height: 28px; border-radius: 6px; background: #1c1c1c; } #dots i.first { outline: 1px solid #666; }
 #dots i.on { background: #e8e8e8; }
+#debug{color:#777;font-size:12px;white-space:pre-wrap}
