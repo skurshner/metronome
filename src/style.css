@@ -20,7 +20,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 svg { display: block; }
 
 /* layout: one full-height column. Fixed to the screen so it fills under the status bar and home indicator. */
-#app { position: fixed; inset: 0; }
+#app { position: fixed; top: 0; left: 0; right: 0; height: var(--app-h, 100%); }
 .screen {
   height: 100%; max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; align-items: center;
   padding: calc(var(--safe-top) + var(--s3)) var(--s3) calc(var(--safe-bottom) + var(--s2));
