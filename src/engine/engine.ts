@@ -15,6 +15,7 @@ export interface MediaMeta {
   onPrevious?: () => void;
 }
 
+const IDLE_TEARDOWN_MS = 10 * 60 * 1000;
 const FADE = 0.006; // seconds; hides the discontinuity when the loop is swapped
 
 /**
@@ -32,6 +33,7 @@ export class MetronomeEngine {
   private loopStart = 0; // ac time the current loop started
   private loopOffset = 0; // seconds into the buffer at loopStart
   private swapTimer?: number;
+  private idleTimer?: number;
   playing = false;
   private starting = false;
   /** Shift the visual beat position to line up with what you hear (seconds, positive = delay visuals). */
@@ -73,12 +75,16 @@ export class MetronomeEngine {
   async start() {
     if (this.playing || this.starting) return;
     this.starting = true;
+    clearTimeout(this.idleTimer);
     try {
-      this.buildGraph();
-      this.launch(0);
-      const played = this.audio!.play(); // synchronous call, still inside the tap
-      void this.ac!.resume().catch(() => {});
-      await played;
+      // After a pause we keep the graph alive so the lock-screen card survives; reuse it only if it's still healthy.
+      const reuse = !!this.ac && !!this.audio && this.ac.state === 'running';
+      try {
+        await this.begin(reuse);
+      } catch (e) {
+        if (!reuse) throw e;
+        await this.begin(false); // stale graph: rebuild once
+      }
       this.playing = true;
       this.updateMediaSession();
       this.onStateChange?.(true);
@@ -91,11 +97,28 @@ export class MetronomeEngine {
     }
   }
 
+  /** Everything needing the user gesture (context creation, audio.play()) happens before the first await. */
+  private begin(reuse: boolean) {
+    if (!reuse) this.buildGraph();
+    this.launch(0);
+    const played = this.audio!.play();
+    void this.ac!.resume().catch(() => {});
+    return played;
+  }
+
+  /** Soft stop: silence and pause, but keep the <audio> element so the lock-screen card stays. */
   stop() {
     const was = this.playing;
     this.playing = false;
-    this.teardown();
+    clearTimeout(this.swapTimer);
+    this.retire(this.voice, 0.01);
+    this.voice = undefined;
+    this.loop = undefined;
+    this.audio?.pause();
     this.updateMediaSession();
+    // Don't hold the audio hardware forever if nobody comes back.
+    clearTimeout(this.idleTimer);
+    this.idleTimer = window.setTimeout(() => { if (!this.playing) this.teardown(); }, IDLE_TEARDOWN_MS);
     if (was) this.onStateChange?.(false);
   }
 
@@ -147,6 +170,7 @@ export class MetronomeEngine {
 
   private teardown() {
     clearTimeout(this.swapTimer);
+    clearTimeout(this.idleTimer);
     const { ac, audio, voice } = this;
     this.voice = undefined;
     this.loop = undefined;
@@ -206,7 +230,7 @@ export class MetronomeEngine {
     const ms = navigator.mediaSession;
     ms.metadata = new MediaMetadata({ title: this.meta.title, artist: `${c.bpm} BPM · ${c.beats}/${c.denominator}`, album: 'Metronome' });
     ms.playbackState = this.playing ? 'playing' : 'paused';
-    ms.setActionHandler('play', () => void this.start());
+    ms.setActionHandler('play', () => void this.start().catch(() => {}));
     ms.setActionHandler('pause', () => this.stop());
     ms.setActionHandler('nexttrack', this.meta.onNext ?? null);
     ms.setActionHandler('previoustrack', this.meta.onPrevious ?? null);
