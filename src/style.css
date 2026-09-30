@@ -1,0 +1,13 @@
+:root { color-scheme: dark; }
+body { margin: 0; padding: max(env(safe-area-inset-top), 16px) 16px 32px; background: #2a2a2a; color: #eee; font: 16px -apple-system, system-ui, sans-serif; }
+h1 { font-size: 18px; margin: 0 0 12px; }
+label { display: block; margin: 12px 0 4px; color: #aaa; }
+input, select, button { font: inherit; font-size: 18px; padding: 10px; border-radius: 10px; border: 0; background: #3a3a3a; color: #fff; width: 100%; box-sizing: border-box; }
+input[type=range] { padding: 0; }
+input[type=checkbox] { width: auto; margin-right: 8px; }
+.check { display: flex; align-items: center; }
+.row { display: flex; gap: 10px; margin-top: 10px; } .row > * { flex: 1; }
+button { background: #555; } .big { margin-top: 20px; padding: 16px; font-size: 22px; }
+#dots { display: flex; gap: 6px; margin-bottom: 8px; }
+#dots i { flex: 1; height: 28px; border-radius: 6px; background: #1c1c1c; } #dots i.first { outline: 1px solid #666; }
+#dots i.on { background: #e8e8e8; }
