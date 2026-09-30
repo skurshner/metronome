@@ -56,9 +56,9 @@ svg { display: block; }
 .tempo-unit { color: #8d8d92; font-size: 23px; font-weight: 300; }
 
 /* dial + flanking pads */
-.dial-wrap { position: relative; width: 100%; margin: 6px 0 4px; padding-bottom: 36px; display: flex; justify-content: center; align-items: flex-start; }
+.dial-wrap { position: relative; width: 100%; margin: 6px 0 4px; padding-bottom: 50px; display: flex; justify-content: center; align-items: flex-start; }
 .dial {
-  width: min(52vw, 270px); aspect-ratio: 1; border-radius: 50%; position: relative; touch-action: none; cursor: grab;
+  width: min(300px, 76vw); aspect-ratio: 1; border-radius: 50%; position: relative; touch-action: none; cursor: grab;
   background: radial-gradient(circle at 50% 40%, #202022, #171718);
   box-shadow: -6px -6px 16px var(--hi), 10px 14px 26px var(--lo), inset 0 2px 8px rgba(0,0,0,.6);
   padding: 6%;
