@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>Metronome Spike</title>
+<title>Metronome Spike 2</title>
 <style>
 body{margin:0;padding:env(safe-area-inset-top) 16px 24px;background:#2a2a2a;color:#eee;font:16px -apple-system,sans-serif}
 h1{font-size:18px}label{display:block;margin:12px 0 4px;color:#aaa}
@@ -18,15 +18,16 @@ button{margin-top:16px;background:#555}pre{white-space:pre-wrap;color:#9c9;font-
 <label>Beats per bar</label><input id="num" type="number" value="4" min="1" max="16">
 <label>Subdivision (clicks per beat)</label>
 <select id="sub"><option value="1">Quarter</option><option value="2">Eighth</option><option value="3">Triplet</option><option value="4">Sixteenth</option></select>
+<label>Mode</label><select id="mode"><option value="A">A: long WAV loop (15 min, 22kHz)</option><option value="B">B: WebAudio loop to MediaStream</option></select>
 <button id="go">Start</button>
 <pre id="log"></pre>
 <script>
 const $=id=>document.getElementById(id), log=m=>{$('log').textContent=new Date().toLocaleTimeString()+' '+m+'\n'+$('log').textContent};
-const SR=44100; let audio,startWall=0,loopLen=0;
+let SR=44100; let MODE='A',ac,src,audio,startWall=0,loopLen=0;
 
 function render(bpm,num,sub){
   const beat=60/bpm, barSec=beat*num;
-  const bars=Math.max(1,Math.ceil(120/barSec)); // ~2+ min loop, whole bars
+  const bars=Math.max(1,Math.ceil((MODE==='A'?900:MODE==='B'?barSec*2:120)/barSec)); // ~2+ min loop, whole bars
   const len=Math.round(bars*barSec*SR);
   const buf=new Float32Array(len);
   const click=(t,freq,gain)=>{ // short decaying sine burst
@@ -37,7 +38,7 @@ function render(bpm,num,sub){
     const t=b*beat+k*beat/sub, down=(b%num===0);
     if(k===0) click(t,down?1500:1000,down?1:0.7); else click(t,800,0.3);
   }
-  return {wav:toWav(buf),dur:len/SR};
+  return {wav:MODE==='A'?toWav(buf):null,f:buf,dur:len/SR};
 }
 function toWav(f){
   const b=new ArrayBuffer(44+f.length*2),v=new DataView(b),w=(o,s)=>[...s].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
@@ -47,11 +48,19 @@ function toWav(f){
   return new Blob([b],{type:'audio/wav'});
 }
 async function start(){
-  stop();
-  const {wav,dur}=render(+$('bpm').value,+$('num').value,+$('sub').value);
-  loopLen=dur; audio=new Audio(URL.createObjectURL(wav)); audio.loop=true;
+  stop(); MODE=$('mode').value; SR=MODE==='A'?22050:44100;
+  const r=render(+$('bpm').value,+$('num').value,+$('sub').value);
+  const dur=r.dur; loopLen=dur;
+  if(MODE==='A'){ audio=new Audio(URL.createObjectURL(r.wav)); audio.loop=true; }
+  else{
+    ac=new (window.AudioContext||webkitAudioContext)({sampleRate:SR});
+    const ab=ac.createBuffer(1,r.f.length,SR); ab.copyToChannel(r.f,0);
+    src=ac.createBufferSource(); src.buffer=ab; src.loop=true;
+    const dest=ac.createMediaStreamDestination(); src.connect(dest); src.start();
+    audio=new Audio(); audio.srcObject=dest.stream;
+  }
   await audio.play(); startWall=Date.now();
-  log(`playing, loop=${dur.toFixed(2)}s`);
+  log(`playing mode ${MODE}, loop=${dur.toFixed(2)}s`);
   if('mediaSession' in navigator){
     navigator.mediaSession.metadata=new MediaMetadata({title:`${$('bpm').value} BPM ${$('num').value}/4`,artist:'Metronome'});
     navigator.mediaSession.setActionHandler('play',()=>audio.play());
@@ -61,11 +70,12 @@ async function start(){
   }
   $('go').textContent='Stop';
 }
-function stop(){ if(audio){audio.pause();audio=null} $('go').textContent='Start' }
+function stop(){ if(src){try{src.stop()}catch(e){}src=null} if(ac){ac.close();ac=null} if(audio){audio.pause();audio=null} $('go').textContent='Start' }
 $('go').onclick=()=>audio?stop():start();
 // drift check: after returning from lock, compare audio clock to wall clock
 document.addEventListener('visibilitychange',()=>{
   if(!audio||document.hidden) return log('hidden (locked/backgrounded)');
+  if(MODE==='B')return log(`visible. paused=${audio.paused} ctx=${ac&&ac.state}`);
   const wall=((Date.now()-startWall)/1000)%loopLen, a=audio.currentTime;
   let d=a-wall; if(d>loopLen/2)d-=loopLen; if(d<-loopLen/2)d+=loopLen;
   log(`visible. paused=${audio.paused} drift=${d.toFixed(3)}s`);
