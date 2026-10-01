@@ -43,9 +43,41 @@ export class MetronomeEngine {
   private meta: MediaMeta = { title: 'Metronome' };
 
   constructor() {
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && this.playing && this.ac && this.ac.state !== 'running') void this.ac.resume().catch(() => {});
-    });
+    // iOS can freeze the page or interrupt audio (calls, alarms, other apps, long background) while our state
+    // still says "playing". On return, verify sound is really flowing and heal or reset.
+    const onReturn = () => {
+      if (document.hidden) return;
+      this.heal();
+      this.verifySoon();
+    };
+    document.addEventListener('visibilitychange', onReturn);
+    addEventListener('pageshow', onReturn);
+    addEventListener('focus', onReturn);
+    // A touch is a user gesture, which iOS requires to restart an interrupted context.
+    addEventListener('pointerdown', () => this.heal(), true);
+  }
+
+  /** Try to revive a context/element that iOS suspended behind our back. */
+  private heal() {
+    if (!this.playing || !this.ac || !this.audio) return;
+    if (this.ac.state !== 'running') void this.ac.resume().catch(() => {});
+    if (this.audio.paused) void this.audio.play().catch(() => {});
+  }
+
+  /** If the audio clock isn't advancing shortly after we return, playback is dead: reset to an honest stopped state. */
+  private verifySoon() {
+    if (!this.playing || !this.ac) return;
+    const ac = this.ac;
+    const t0 = ac.currentTime;
+    setTimeout(() => {
+      if (!this.playing || this.ac !== ac) return;
+      if (ac.state === 'running' && ac.currentTime - t0 > 0.15) return;
+      this.playing = false;
+      this.teardown();
+      this.updateMediaSession();
+      this.onStateChange?.(false);
+      this.onError?.('Audio was interrupted while the app was in the background. Tap play to restart.');
+    }, 700);
   }
 
   get config(): MetronomeConfig {

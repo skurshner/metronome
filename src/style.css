@@ -86,7 +86,7 @@ svg { display: block; }
 .pad.play { left: 0; } .pad.tap { right: 0; font-size: 22px; font-weight: 600; }
 .pad.play.on { color: var(--accent); }
 
-.toast { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 2px); margin: 0; color: #b56; font-size: 12px; text-align: center; pointer-events: none; }
+.toast { position: absolute; left: 0; right: 0; bottom: calc(var(--safe-bottom) + 2px); margin: 0; padding: 0 var(--s3); color: #e0907a; font-size: 13px; line-height: 1.35; text-align: center; pointer-events: none; }
 
 /* sheets */
 .sheet-back { position: fixed; inset: 0; background: rgba(0,0,0,0); z-index: 10; display: flex; align-items: flex-end; justify-content: center; transition: background .25s; }

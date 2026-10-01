@@ -161,7 +161,7 @@ export function mountApp(root: HTMLElement, engine: MetronomeEngine) {
     $('play').classList.toggle('on', p);
     if (!p) { litBeat = -1; root.querySelectorAll('.bar.lit').forEach((b) => b.classList.remove('lit')); }
   };
-  engine.onError = (m) => toast(`Couldn't start audio (${m})`);
+  engine.onError = (m) => toast(m.includes('interrupted') ? m : `Couldn't start audio (${m})`);
 
   let taps: number[] = [];
   $('tap').onclick = () => {

@@ -15,5 +15,7 @@ function measureMissingHeight() {
 measureMissingHeight();
 addEventListener('resize', measureMissingHeight);
 
-mountApp(document.getElementById('app')!, new MetronomeEngine());
+const engine = new MetronomeEngine();
+mountApp(document.getElementById('app')!, engine);
+if (import.meta.env.DEV) (window as unknown as { __engine: MetronomeEngine }).__engine = engine;
 if ('serviceWorker' in navigator) navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
