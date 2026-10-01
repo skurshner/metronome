@@ -34,6 +34,8 @@ export class MetronomeEngine {
   private loopOffset = 0; // seconds into the buffer at loopStart
   private swapTimer?: number;
   private idleTimer?: number;
+  private beat?: number;
+  private samples: { t: number; at: number }[] = [];
   playing = false;
   private starting = false;
   /** Shift the visual beat position to line up with what you hear (seconds, positive = delay visuals). */
@@ -57,9 +59,16 @@ export class MetronomeEngine {
     addEventListener('pointerdown', () => this.heal(), true);
   }
 
+  /** True unless the audio clock has visibly stalled relative to wall time. */
+  private clockAlive() {
+    const [a, b] = this.samples.slice(-2);
+    if (!a || !b) return true;
+    return b.t - a.t > 0.5 * (b.at - a.at);
+  }
+
   /** Try to revive a context/element that iOS suspended behind our back. */
   private heal() {
-    if (!this.playing || !this.ac || !this.audio) return;
+    if (!this.ac || !this.audio) return;
     if (this.ac.state !== 'running') void this.ac.resume().catch(() => {});
     if (this.audio.paused) void this.audio.play().catch(() => {});
   }
@@ -110,7 +119,7 @@ export class MetronomeEngine {
     clearTimeout(this.idleTimer);
     try {
       // After a pause we keep the graph alive so the lock-screen card survives; reuse it only if it's still healthy.
-      const reuse = !!this.ac && !!this.audio && this.ac.state === 'running';
+      const reuse = !!this.ac && !!this.audio && this.ac.state === 'running' && this.clockAlive();
       try {
         await this.begin(reuse);
       } catch (e) {
@@ -133,12 +142,18 @@ export class MetronomeEngine {
   private begin(reuse: boolean) {
     if (!reuse) this.buildGraph();
     this.launch(0);
-    const played = this.audio!.play();
+    // While paused we keep the element playing silence, so there's normally nothing to start.
+    const played = this.audio!.paused ? this.audio!.play() : Promise.resolve();
     void this.ac!.resume().catch(() => {});
     return played;
   }
 
-  /** Soft stop: silence and pause, but keep the <audio> element so the lock-screen card stays. */
+  /**
+   * Pause = mute, not stop. We keep the <audio> element playing a silent stream so iOS keeps the audio session (and
+   * the lock-screen card) alive; resuming is then just unmuting a running engine, which works from the lock screen.
+   * Pausing the element instead lets iOS suspend the audio engine within a minute, after which it can't be restarted
+   * without an on-screen tap.
+   */
   stop() {
     const was = this.playing;
     this.playing = false;
@@ -146,7 +161,6 @@ export class MetronomeEngine {
     this.retire(this.voice, 0.01);
     this.voice = undefined;
     this.loop = undefined;
-    this.audio?.pause();
     this.updateMediaSession();
     // Don't hold the audio hardware forever if nobody comes back.
     clearTimeout(this.idleTimer);
@@ -190,6 +204,10 @@ export class MetronomeEngine {
     this.ac = ac;
     this.dest = dest;
     this.audio = audio;
+    this.samples = [];
+    this.beat = window.setInterval(() => {
+      this.samples = [...this.samples, { t: ac.currentTime, at: performance.now() / 1000 }].slice(-3);
+    }, 1000);
     // The lock screen or another app can pause the element behind our back; keep state honest.
     audio.addEventListener('pause', () => {
       if (this.audio === audio && this.playing) this.stop();
@@ -203,6 +221,8 @@ export class MetronomeEngine {
   private teardown() {
     clearTimeout(this.swapTimer);
     clearTimeout(this.idleTimer);
+    clearInterval(this.beat);
+    this.samples = [];
     const { ac, audio, voice } = this;
     this.voice = undefined;
     this.loop = undefined;
@@ -262,8 +282,9 @@ export class MetronomeEngine {
     const ms = navigator.mediaSession;
     ms.metadata = new MediaMetadata({ title: this.meta.title, artist: `${c.bpm} BPM · ${c.beats}/${c.denominator}`, album: 'Metronome' });
     ms.playbackState = this.playing ? 'playing' : 'paused';
-    ms.setActionHandler('play', () => void this.start().catch(() => {}));
-    ms.setActionHandler('pause', () => this.stop());
+    // Both buttons toggle: while paused we keep a silent stream playing, so iOS may still show a "pause" icon.
+    ms.setActionHandler('play', () => { if (!this.playing) void this.start().catch(() => {}); });
+    ms.setActionHandler('pause', () => { if (this.playing) this.stop(); else void this.start().catch(() => {}); });
     ms.setActionHandler('nexttrack', this.meta.onNext ?? null);
     ms.setActionHandler('previoustrack', this.meta.onPrevious ?? null);
   }
