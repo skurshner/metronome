@@ -35,6 +35,8 @@ export class MetronomeEngine {
   private swapTimer?: number;
   private idleTimer?: number;
   private beat?: number;
+  private cache?: { key: string; ac: AudioContext; loop: RenderedLoop; buf: AudioBuffer };
+  private prepTimer?: number;
   private samples: { t: number; at: number }[] = [];
   playing = false;
   private starting = false;
@@ -100,6 +102,10 @@ export class MetronomeEngine {
       // debounce so dragging the dial doesn't re-render on every pixel
       clearTimeout(this.swapTimer);
       this.swapTimer = window.setTimeout(() => this.swap(), 30);
+    } else if (this.ac) {
+      // paused: get the render out of the way now so resuming does no heavy work
+      clearTimeout(this.prepTimer);
+      this.prepTimer = window.setTimeout(() => { if (!this.playing && this.ac) this.prepared(this.ac); }, 250);
     }
   }
 
@@ -222,6 +228,8 @@ export class MetronomeEngine {
     clearTimeout(this.swapTimer);
     clearTimeout(this.idleTimer);
     clearInterval(this.beat);
+    clearTimeout(this.prepTimer);
+    this.cache = undefined;
     this.samples = [];
     const { ac, audio, voice } = this;
     this.voice = undefined;
@@ -235,12 +243,25 @@ export class MetronomeEngine {
     void ac?.close().catch(() => {});
   }
 
+  /**
+   * The rendered loop for the current settings. Rendering is main-thread work, and a stall right when playback starts
+   * makes WebKit's stream renderer nudge its playback rate (audible as a slight pitch change), so we cache the result
+   * and re-render ahead of time whenever settings change.
+   */
+  private prepared(ac: AudioContext) {
+    const c = this.cfg;
+    const key = JSON.stringify([c.bpm, c.beats, c.subdivision, c.accentFirst, c.kit, c.volume]);
+    if (this.cache?.key === key && this.cache.ac === ac) return this.cache;
+    const loop = renderLoop(c, ac.sampleRate);
+    const buf = ac.createBuffer(1, loop.samples.length, ac.sampleRate);
+    buf.copyToChannel(loop.samples, 0);
+    return (this.cache = { key, ac, loop, buf });
+  }
+
   /** Start a new voice at `offset` seconds into the freshly rendered loop. */
   private launch(offset: number) {
     const ac = this.ac!;
-    const loop = renderLoop(this.cfg, ac.sampleRate);
-    const buf = ac.createBuffer(1, loop.samples.length, ac.sampleRate);
-    buf.copyToChannel(loop.samples, 0);
+    const { loop, buf } = this.prepared(ac);
     const src = ac.createBufferSource();
     src.buffer = buf;
     src.loop = true;
