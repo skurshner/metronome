@@ -17,6 +17,7 @@ export interface MediaMeta {
 
 const IDLE_TEARDOWN_MS = 10 * 60 * 1000;
 const FADE = 0.006; // seconds; hides the discontinuity when the loop is swapped
+const RESUME_RAMP = 0.003; // just enough to avoid a hard edge on the first hit after silence
 
 /**
  * Plays a seamless, pre-rendered click loop.
@@ -210,6 +211,7 @@ export class MetronomeEngine {
     this.ac = ac;
     this.dest = dest;
     this.audio = audio;
+    this.startNoiseFloor(ac, dest);
     this.samples = [];
     this.beat = window.setInterval(() => {
       this.samples = [...this.samples, { t: ac.currentTime, at: performance.now() / 1000 }].slice(-3);
@@ -222,6 +224,22 @@ export class MetronomeEngine {
     ac.addEventListener('statechange', () => {
       if (this.ac === ac && this.playing && ac.state !== 'running') void ac.resume().catch(() => {});
     });
+  }
+
+  /**
+   * An inaudible constant noise floor (about -68 dBFS) so the stream is never digitally silent. Going from pure silence
+   * to sound seems to make WebKit's stream renderer re-adapt its playback rate, heard as a brief pitch shift on resume.
+   */
+  private startNoiseFloor(ac: AudioContext, dest: MediaStreamAudioDestinationNode) {
+    const n = ac.sampleRate; // one second, looped
+    const buf = ac.createBuffer(1, n, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * 0.0004;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(dest);
+    src.start();
   }
 
   private teardown() {
@@ -267,8 +285,8 @@ export class MetronomeEngine {
     src.loop = true;
     const gain = ac.createGain();
     const now = ac.currentTime;
-    gain.gain.setValueAtTime(this.voice ? 0 : 1, now);
-    if (this.voice) gain.gain.linearRampToValueAtTime(1, now + FADE);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(1, now + (this.voice ? FADE : RESUME_RAMP));
     src.connect(gain).connect(this.dest!);
     src.start(now, offset);
     this.retire(this.voice, FADE);
